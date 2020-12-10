@@ -1,0 +1,16 @@
+ARG BASE
+
+FROM ${BASE}
+
+ARG AUTHOR
+ARG VERSION
+
+LABEL maintainer=${AUTHOR} version=${VERSION}
+
+ARG TARGETOS
+ARG TARGETARCH
+
+COPY ./dist/trivy-$TARGETOS-$TARGETARCH /usr/local/bin/trivy
+COPY ./contrib/*.tpl contrib/
+
+ENTRYPOINT ["trivy"]

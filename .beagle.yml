@@ -1,0 +1,88 @@
+platform: 10.11.92.33
+
+workspace:
+  path: src/github.com/aquasecurity/trivy
+
+clone:
+  git:
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-git:1.0
+    pull: true
+    dns: 223.5.5.5
+
+pipeline:
+
+  golang:
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-go-arch:1.15.5-buster
+    dns: 223.5.5.5
+    volumes:
+      - /data/cache/golang/mod:/go/pkg/mod
+    binary: trivy
+    main: cmd/trivy
+
+  docker:
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
+    pull: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    base: registry.cn-qingdao.aliyuncs.com/wod/debian:buster-slim
+    dockerfile: .beagle/dockerfile
+    repo: wod/awecloud-trivy
+    version: "v0.14.0"
+    args: "TARGETOS=linux,TARGETARCH=amd64"
+    registry: registry.cn-qingdao.aliyuncs.com
+    secrets: 
+      - source: REGISTRY_USER_ALIYUN
+        target: REGISTRY_USER
+      - source: REGISTRY_PASSWORD_ALIYUN
+        target: REGISTRY_PASSWORD
+
+  docker-arm64:
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
+    pull: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    base: registry.cn-qingdao.aliyuncs.com/wod/debian-arm64:buster-slim
+    dockerfile: .beagle/dockerfile
+    repo: wod/awecloud-trivy-arm64
+    version: "v0.14.0"
+    args: "TARGETOS=linux,TARGETARCH=arm64"
+    registry: registry.cn-qingdao.aliyuncs.com
+    secrets: 
+      - source: REGISTRY_USER_ALIYUN
+        target: REGISTRY_USER
+      - source: REGISTRY_PASSWORD_ALIYUN
+        target: REGISTRY_PASSWORD
+
+  docker-ppc64le:
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
+    pull: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    base: registry.cn-qingdao.aliyuncs.com/wod/debian-ppc64le:buster-slim
+    dockerfile: .beagle/dockerfile
+    repo: wod/awecloud-trivy-ppc64le
+    version: "v0.14.0"
+    args: "TARGETOS=linux,TARGETARCH=ppc64le"
+    registry: registry.cn-qingdao.aliyuncs.com
+    secrets: 
+      - source: REGISTRY_USER_ALIYUN
+        target: REGISTRY_USER
+      - source: REGISTRY_PASSWORD_ALIYUN
+        target: REGISTRY_PASSWORD
+
+  docker-mips64el:
+    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
+    pull: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    base: registry.cn-qingdao.aliyuncs.com/wod/debian-mips64el:buster-slim
+    dockerfile: .beagle/dockerfile
+    repo: wod/awecloud-trivy-mips64el
+    version: "v0.14.0"
+    args: "TARGETOS=linux,TARGETARCH=mips64le"
+    registry: registry.cn-qingdao.aliyuncs.com
+    secrets: 
+      - source: REGISTRY_USER_ALIYUN
+        target: REGISTRY_USER
+      - source: REGISTRY_PASSWORD_ALIYUN
+        target: REGISTRY_PASSWORD
