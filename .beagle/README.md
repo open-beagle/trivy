@@ -1,4 +1,4 @@
-# version
+# trivy
 
 ```bash
 git remote add upstream git@github.com:aquasecurity/trivy.git
