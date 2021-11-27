@@ -34,7 +34,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/debian:bullseye-slim-amd64
       repo: wod/trivy
-      version: v0.16.0
+      version: v0.17.0
       channel: amd64
       args: 'TARGETOS=linux,TARGETARCH=amd64'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -52,7 +52,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/debian:bullseye-slim-arm64
       repo: wod/trivy
-      version: v0.16.0
+      version: v0.17.0
       channel: arm64
       args: 'TARGETOS=linux,TARGETARCH=arm64'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -70,7 +70,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/debian:bullseye-slim-ppc64le
       repo: wod/trivy
-      version: v0.16.0
+      version: v0.17.0
       channel: ppc64le
       args: 'TARGETOS=linux,TARGETARCH=ppc64le'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -88,7 +88,7 @@ steps:
       dockerfile: .beagle/dockerfile
       base: registry.cn-qingdao.aliyuncs.com/wod/debian:bullseye-slim-mips64le
       repo: wod/trivy
-      version: v0.16.0
+      version: v0.17.0
       channel: mips64le
       args: 'TARGETOS=linux,TARGETARCH=mips64le'
       registry: registry.cn-qingdao.aliyuncs.com
@@ -104,8 +104,8 @@ steps:
         path: /var/run/docker.sock
     settings:
       platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/mips64le
-      template: registry.cn-qingdao.aliyuncs.com/wod/trivy:v0.16.0-ARCH
-      target: registry.cn-qingdao.aliyuncs.com/wod/trivy:v0.16.0
+      template: registry.cn-qingdao.aliyuncs.com/wod/trivy:v0.17.0-ARCH
+      target: registry.cn-qingdao.aliyuncs.com/wod/trivy:v0.17.0
       username:
         from_secret: REGISTRY_USER_ALIYUN
       password:
