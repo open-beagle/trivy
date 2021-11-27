@@ -37,11 +37,12 @@ func TestReportWriter_Table(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: `+---------+------------------+----------+-------------------+---------------+--------+-----------------------------------+
-| LIBRARY | VULNERABILITY ID | SEVERITY | INSTALLED VERSION | FIXED VERSION | TITLE  |                URL                |
-+---------+------------------+----------+-------------------+---------------+--------+-----------------------------------+
-| foo     | CVE-2020-0001    | HIGH     | 1.2.3             | 3.4.5         | foobar | avd.aquasec.com/nvd/cve-2020-0001 |
-+---------+------------------+----------+-------------------+---------------+--------+-----------------------------------+
+			expectedOutput: `+---------+------------------+----------+-------------------+---------------+--------------------------------------+
+| LIBRARY | VULNERABILITY ID | SEVERITY | INSTALLED VERSION | FIXED VERSION |                TITLE                 |
++---------+------------------+----------+-------------------+---------------+--------------------------------------+
+| foo     | CVE-2020-0001    | HIGH     | 1.2.3             | 3.4.5         | foobar                               |
+|         |                  |          |                   |               | -->avd.aquasec.com/nvd/cve-2020-0001 |
++---------+------------------+----------+-------------------+---------------+--------------------------------------+
 `,
 		},
 		{
@@ -68,7 +69,7 @@ func TestReportWriter_Table(t *testing.T) {
 `,
 		},
 		{
-			name: "no title for vuln",
+			name: "no title for vuln and missing primary link",
 			detectedVulns: []types.DetectedVulnerability{
 				{
 					VulnerabilityID:  "123",
@@ -81,11 +82,11 @@ func TestReportWriter_Table(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: `+---------+------------------+----------+-------------------+---------------+--------+-----+
-| LIBRARY | VULNERABILITY ID | SEVERITY | INSTALLED VERSION | FIXED VERSION | TITLE  | URL |
-+---------+------------------+----------+-------------------+---------------+--------+-----+
-| foo     |              123 | HIGH     | 1.2.3             | 3.4.5         | foobar |     |
-+---------+------------------+----------+-------------------+---------------+--------+-----+
+			expectedOutput: `+---------+------------------+----------+-------------------+---------------+--------+
+| LIBRARY | VULNERABILITY ID | SEVERITY | INSTALLED VERSION | FIXED VERSION | TITLE  |
++---------+------------------+----------+-------------------+---------------+--------+
+| foo     |              123 | HIGH     | 1.2.3             | 3.4.5         | foobar |
++---------+------------------+----------+-------------------+---------------+--------+
 `,
 		},
 		{
@@ -103,11 +104,12 @@ func TestReportWriter_Table(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: `+---------+------------------+----------+-------------------+---------------+----------------------------+-----------------------------------+
-| LIBRARY | VULNERABILITY ID | SEVERITY | INSTALLED VERSION | FIXED VERSION |           TITLE            |                URL                |
-+---------+------------------+----------+-------------------+---------------+----------------------------+-----------------------------------+
-| foo     | CVE-2020-1234    | HIGH     | 1.2.3             | 3.4.5         | a b c d e f g h i j k l... | avd.aquasec.com/nvd/cve-2020-0001 |
-+---------+------------------+----------+-------------------+---------------+----------------------------+-----------------------------------+
+			expectedOutput: `+---------+------------------+----------+-------------------+---------------+--------------------------------------+
+| LIBRARY | VULNERABILITY ID | SEVERITY | INSTALLED VERSION | FIXED VERSION |                TITLE                 |
++---------+------------------+----------+-------------------+---------------+--------------------------------------+
+| foo     | CVE-2020-1234    | HIGH     | 1.2.3             | 3.4.5         | a b c d e f g h i j k l...           |
+|         |                  |          |                   |               | -->avd.aquasec.com/nvd/cve-2020-0001 |
++---------+------------------+----------+-------------------+---------------+--------------------------------------+
 `,
 		},
 		{
@@ -255,7 +257,7 @@ func TestReportWriter_Template(t *testing.T) {
 			template: `<testsuites>
 {{- range . -}}
 {{- $failures := len .Vulnerabilities }}
-    <testsuite tests="1" failures="{{ $failures }}" time="" name="{{  .Target }}">
+    <testsuite tests="1" failures="{{ $failures }}" time="" name="{{  .Target }}" errors="0" skipped="0">
 	{{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
@@ -271,7 +273,7 @@ func TestReportWriter_Template(t *testing.T) {
 </testsuites>`,
 
 			expected: `<testsuites>
-    <testsuite tests="1" failures="1" time="" name="foojunit">
+    <testsuite tests="1" failures="1" time="" name="foojunit" errors="0" skipped="0">
         <properties>
             <property name="type" value="test"></property>
         </properties>

@@ -31,8 +31,7 @@ var (
 		"5": time.Date(2017, 3, 31, 23, 59, 59, 0, time.UTC),
 		"6": time.Date(2020, 11, 30, 23, 59, 59, 0, time.UTC),
 		"7": time.Date(2024, 6, 30, 23, 59, 59, 0, time.UTC),
-		// N/A
-		"8": time.Date(3000, 6, 30, 23, 59, 59, 0, time.UTC),
+		"8": time.Date(2021, 12, 31, 23, 59, 59, 0, time.UTC),
 	}
 	excludedVendorsSuffix = []string{
 		".remi",
@@ -63,12 +62,13 @@ func (s *Scanner) Detect(osVer string, pkgs []ftypes.Package) ([]types.DetectedV
 	var vulns []types.DetectedVulnerability
 	for _, pkg := range pkgs {
 		if !s.isFromSupportedVendor(pkg) {
-			log.Logger.Debugf("Skipping %s: unsupported vendor", pkg.SrcName)
+			log.Logger.Debugf("Skipping %s: unsupported vendor", pkg.Name)
 			continue
 		}
 
 		// For Red Hat Security Data API containing only source package names
-		advisories, err := s.vs.Get(osVer, pkg.SrcName)
+		pkgName := addModularNamespace(pkg.SrcName, pkg.Modularitylabel)
+		advisories, err := s.vs.Get(osVer, pkgName)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to get Red Hat advisories: %w", err)
 		}
@@ -89,8 +89,9 @@ func (s *Scanner) Detect(osVer string, pkgs []ftypes.Package) ([]types.DetectedV
 			vulns = append(vulns, vuln)
 		}
 
-		// For Red Hat OVAL containing only binary package names
-		advisories, err = s.vs.Get(osVer, pkg.Name)
+		// For Red Hat OVAL v2 containing only binary package names
+		pkgName = addModularNamespace(pkg.Name, pkg.Modularitylabel)
+		advisories, err = s.vs.Get(osVer, pkgName)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to get Red Hat advisories: %w", err)
 		}
@@ -144,4 +145,18 @@ func (s *Scanner) isFromSupportedVendor(pkg ftypes.Package) bool {
 		}
 	}
 	return true
+}
+
+func addModularNamespace(name, label string) string {
+	// e.g. npm, nodejs:12:8030020201124152102:229f0a1c => nodejs:12::npm
+	var count int
+	for i, r := range label {
+		if r == ':' {
+			count++
+		}
+		if count == 2 {
+			return label[:i] + "::" + name
+		}
+	}
+	return name
 }

@@ -178,35 +178,54 @@ func TestScanner_Detect(t *testing.T) {
 			},
 		},
 		{
-			name: "sad path: Get returns an error",
+			name: "happy path: modular packages",
 			args: args{
-				osVer: "5",
+				osVer: "8.3",
 				pkgs: []ftypes.Package{
 					{
-						Name:       "nss",
-						Version:    "3.36.0",
-						Release:    "7.1.el7_6",
-						Epoch:      0,
-						Arch:       "x86_64",
-						SrcName:    "nss",
-						SrcVersion: "3.36.0",
-						SrcRelease: "7.4.160",
-						SrcEpoch:   0,
+						Name:            "php",
+						Version:         "7.2.24",
+						Release:         "1.module_el8.2.0+313+b04d0a66",
+						Arch:            "x86_64",
+						Epoch:           0,
+						SrcName:         "php",
+						SrcVersion:      "7.2.24",
+						SrcRelease:      "1.module_el8.2.0+313+b04d0a66",
+						SrcEpoch:        0,
+						Modularitylabel: "php:7.2:8020020200507003613:2c7ca891",
+						Layer: ftypes.Layer{
+							DiffID: "sha256:3e968ecc016e1b9aa19023798229bf2d25c813d1bf092533f38b056aff820524",
+						},
 					},
 				},
 			},
 			get: []dbTypes.GetExpectation{
 				{
 					Args: dbTypes.GetArgs{
-						Release: "5",
-						PkgName: "nss",
+						Release: "8",
+						PkgName: "php:7.2::php",
 					},
 					Returns: dbTypes.GetReturns{
-						Err: xerrors.New("error"),
+						Advisories: []dbTypes.Advisory{
+							{
+								VulnerabilityID: "CVE-2019-11043",
+								FixedVersion:    "7.3.5-5.module+el8.1.0+4560+e0eee7d6",
+							},
+						},
 					},
 				},
 			},
-			wantErr: true,
+			want: []types.DetectedVulnerability{
+				{
+					VulnerabilityID:  "CVE-2019-11043",
+					PkgName:          "php",
+					InstalledVersion: "7.2.24-1.module_el8.2.0+313+b04d0a66",
+					FixedVersion:     "7.3.5-5.module+el8.1.0+4560+e0eee7d6",
+					Layer: ftypes.Layer{
+						DiffID: "sha256:3e968ecc016e1b9aa19023798229bf2d25c813d1bf092533f38b056aff820524",
+					},
+				},
+			},
 		},
 		{
 			name: "happy path: packages from remi repository are skipped",
@@ -246,6 +265,37 @@ func TestScanner_Detect(t *testing.T) {
 				},
 			},
 			want: []types.DetectedVulnerability(nil),
+		},
+		{
+			name: "sad path: Get returns an error",
+			args: args{
+				osVer: "5",
+				pkgs: []ftypes.Package{
+					{
+						Name:       "nss",
+						Version:    "3.36.0",
+						Release:    "7.1.el7_6",
+						Epoch:      0,
+						Arch:       "x86_64",
+						SrcName:    "nss",
+						SrcVersion: "3.36.0",
+						SrcRelease: "7.4.160",
+						SrcEpoch:   0,
+					},
+				},
+			},
+			get: []dbTypes.GetExpectation{
+				{
+					Args: dbTypes.GetArgs{
+						Release: "5",
+						PkgName: "nss",
+					},
+					Returns: dbTypes.GetReturns{
+						Err: xerrors.New("error"),
+					},
+				},
+			},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
@@ -298,6 +348,12 @@ func TestScanner_IsSupportedVersion(t *testing.T) {
 			osFamily:  "centos",
 			osVersion: "8.0",
 			expected:  true,
+		},
+		"centos8 (eol ends)": {
+			now:       time.Date(2022, 12, 1, 0, 0, 0, 0, time.UTC),
+			osFamily:  "centos",
+			osVersion: "8.0",
+			expected:  false,
 		},
 		"two dots": {
 			now:       time.Date(2019, 5, 31, 23, 59, 59, 0, time.UTC),

@@ -144,6 +144,13 @@ var (
 		EnvVars: []string{"TRIVY_CACHE_DIR"},
 	}
 
+	cacheBackendFlag = cli.StringFlag{
+		Name:    "cache-backend",
+		Value:   "fs",
+		Usage:   "cache backend (e.g. redis://localhost:6379)",
+		EnvVars: []string{"TRIVY_CACHE_BACKEND"},
+	}
+
 	ignoreFileFlag = cli.StringFlag{
 		Name:    "ignorefile",
 		Value:   vulnerability.DefaultIgnoreFile,
@@ -229,6 +236,7 @@ var (
 		&listAllPackages,
 		&skipFiles,
 		&skipDirectories,
+		&cacheBackendFlag,
 	}
 
 	// deprecated options
@@ -378,13 +386,11 @@ func NewFilesystemCommand() *cli.Command {
 			&exitCodeFlag,
 			&skipUpdateFlag,
 			&clearCacheFlag,
-			&quietFlag,
 			&ignoreUnfixedFlag,
-			&debugFlag,
 			&removedPkgsFlag,
 			&vulnTypeFlag,
 			&ignoreFileFlag,
-			&cacheDirFlag,
+			&cacheBackendFlag,
 			&timeoutFlag,
 			&noProgressFlag,
 			&ignorePolicy,
@@ -412,13 +418,11 @@ func NewRepositoryCommand() *cli.Command {
 			&exitCodeFlag,
 			&skipUpdateFlag,
 			&clearCacheFlag,
-			&quietFlag,
 			&ignoreUnfixedFlag,
-			&debugFlag,
 			&removedPkgsFlag,
 			&vulnTypeFlag,
 			&ignoreFileFlag,
-			&cacheDirFlag,
+			&cacheBackendFlag,
 			&timeoutFlag,
 			&noProgressFlag,
 			&ignorePolicy,
@@ -445,13 +449,10 @@ func NewClientCommand() *cli.Command {
 			&outputFlag,
 			&exitCodeFlag,
 			&clearCacheFlag,
-			&quietFlag,
 			&ignoreUnfixedFlag,
-			&debugFlag,
 			&removedPkgsFlag,
 			&vulnTypeFlag,
 			&ignoreFileFlag,
-			&cacheDirFlag,
 			&timeoutFlag,
 			&ignorePolicy,
 
@@ -484,9 +485,7 @@ func NewServerCommand() *cli.Command {
 			&skipUpdateFlag,
 			&downloadDBOnlyFlag,
 			&resetFlag,
-			&quietFlag,
-			&debugFlag,
-			&cacheDirFlag,
+			&cacheBackendFlag,
 
 			// original flags
 			&token,
