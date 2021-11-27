@@ -3,11 +3,13 @@ package report_test
 import (
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/report"
@@ -253,19 +255,18 @@ func TestReportWriter_Template(t *testing.T) {
 					},
 				},
 			},
-
 			template: `<testsuites>
 {{- range . -}}
 {{- $failures := len .Vulnerabilities }}
-    <testsuite tests="1" failures="{{ $failures }}" time="" name="{{  .Target }}" errors="0" skipped="0">
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
 	{{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
         </properties>
         {{- end -}}
         {{ range .Vulnerabilities }}
-        <testcase classname={{ printf "%v-%v" .PkgName .InstalledVersion | printf "%q" }} name="[{{ .Vulnerability.Severity }}] {{ .VulnerabilityID }}" time="">
-            <failure message={{escapeXML .Title | printf "%q" }} type="description">{{ endWithPeriod (escapeString .Description) | printf "%q" }}</failure>
+        <testcase classname="{{ .PkgName }}-{{ .InstalledVersion }}" name="[{{ .Vulnerability.Severity }}] {{ .VulnerabilityID }}" time="">
+            <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Description }}</failure>
         </testcase>
     {{- end }}
 	</testsuite>
@@ -273,12 +274,12 @@ func TestReportWriter_Template(t *testing.T) {
 </testsuites>`,
 
 			expected: `<testsuites>
-    <testsuite tests="1" failures="1" time="" name="foojunit" errors="0" skipped="0">
+    <testsuite tests="1" failures="1" name="foojunit" errors="0" skipped="0" time="">
         <properties>
             <property name="type" value="test"></property>
         </properties>
-        <testcase classname="foo \\ test-1.2.3" name="[HIGH] 123" time="">
-            <failure message="gcc: POWER9 &#34;DARN&#34; RNG intrinsic produces repeated output" type="description">"curl version curl \\X 7.20.0 to and including curl 7.59.0 contains a CWE-126: Buffer Over-read vulnerability in denial of service that can result in curl can be tricked into reading data beyond the end of a heap based buffer used to store downloaded RTSP content.. This vulnerability appears to have been fixed in curl &lt; 7.20.0 and curl &gt;= 7.60.0."</failure>
+        <testcase classname="foo \ test-1.2.3" name="[HIGH] 123" time="">
+            <failure message="gcc: POWER9 &#34;DARN&#34; RNG intrinsic produces repeated output" type="description">curl version curl \X 7.20.0 to and including curl 7.59.0 contains a CWE-126: Buffer Over-read vulnerability in denial of service that can result in curl can be tricked into reading data beyond the end of a heap based buffer used to store downloaded RTSP content.. This vulnerability appears to have been fixed in curl &lt; 7.20.0 and curl &gt;= 7.60.0.</failure>
         </testcase>
 	</testsuite>
 </testsuites>`,
@@ -312,6 +313,37 @@ func TestReportWriter_Template(t *testing.T) {
 			expected: `CVE-2019-0000 "without period."CVE-2019-0000 "with period."CVE-2019-0000 "with period and unescaped string curl: Use-after-free when closing &#39;easy&#39; handle in Curl_close()."`,
 		},
 		{
+			name: "Calculate using sprig",
+			detectedVulns: []types.DetectedVulnerability{
+				{
+					VulnerabilityID: "CVE-2019-0000",
+					PkgName:         "foo",
+					Vulnerability: dbTypes.Vulnerability{
+						Description: "without period",
+						Severity:    dbTypes.SeverityCritical.String(),
+					},
+				},
+				{
+					VulnerabilityID: "CVE-2019-0000",
+					PkgName:         "bar",
+					Vulnerability: dbTypes.Vulnerability{
+						Description: "with period.",
+						Severity:    dbTypes.SeverityCritical.String(),
+					},
+				},
+				{
+					VulnerabilityID: "CVE-2019-0000",
+					PkgName:         "bar",
+					Vulnerability: dbTypes.Vulnerability{
+						Description: `with period and unescaped string curl: Use-after-free when closing 'easy' handle in Curl_close().`,
+						Severity:    dbTypes.SeverityHigh.String(),
+					},
+				},
+			},
+			template: `{{ $high := 0 }}{{ $critical := 0 }}{{ range . }}{{ range .Vulnerabilities}}{{ if eq .Severity "HIGH" }}{{ $high = add $high 1 }}{{ end }}{{ if eq .Severity "CRITICAL" }}{{ $critical = add $critical 1 }}{{ end }}{{ end }}Critical: {{ $critical }}, High: {{ $high }}{{ end }}`,
+			expected: `Critical: 2, High: 1`,
+		},
+		{
 			name:          "happy path: env var parsing and getCurrentTime",
 			detectedVulns: []types.DetectedVulnerability{},
 			template:      `{{ toLower (getEnv "AWS_ACCOUNT_ID") }} {{ getCurrentTime }}`,
@@ -335,6 +367,204 @@ func TestReportWriter_Template(t *testing.T) {
 
 			assert.NoError(t, report.WriteResults("template", &tmplWritten, nil, inputResults, tc.template, false))
 			assert.Equal(t, tc.expected, tmplWritten.String())
+		})
+	}
+}
+
+func TestReportWriter_Template_SARIF(t *testing.T) {
+	testCases := []struct {
+		name          string
+		target        string
+		detectedVulns []types.DetectedVulnerability
+		want          string
+	}{
+		{
+			name:   "no primary url",
+			target: "foo/target/alpine-310.tar.gz (alpine 3.10.2)",
+			detectedVulns: []types.DetectedVulnerability{
+				{
+					VulnerabilityID:  "CVE-1234-5678",
+					PkgName:          "foopackage",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "4.5.6",
+					SeveritySource:   "NVD",
+					PrimaryURL:       "",
+					Vulnerability: dbTypes.Vulnerability{
+						Title:       "foovuln",
+						Description: "foodesc",
+						Severity:    "CRITICAL",
+					},
+				},
+			},
+			want: `{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "informationUri": "https://github.com/aquasecurity/trivy",
+          "fullName": "Trivy Vulnerability Scanner",
+          "version": "0.15.0",
+          "rules": [
+            {
+              "id": "CVE-1234-5678/foopackage",
+              "name": "Other Vulnerability (Footype)",
+              "shortDescription": {
+                "text": "CVE-1234-5678 Package: foopackage"
+              },
+              "fullDescription": {
+                "text": "foovuln."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "help": {
+                "text": "Vulnerability CVE-1234-5678\nSeverity: CRITICAL\nPackage: foopackage\nInstalled Version: 1.2.3\nFixed Version: 4.5.6\nLink: [CVE-1234-5678]()",
+                "markdown": "**Vulnerability CVE-1234-5678**\n| Severity | Package | Installed Version | Fixed Version | Link |\n| --- | --- | --- | --- | --- |\n|CRITICAL|foopackage|1.2.3|4.5.6|[CVE-1234-5678]()|\n"
+              },
+              "properties": {
+                "tags": [
+                  "vulnerability",
+                  "CRITICAL",
+                  "foopackage"
+                ],
+                "precision": "very-high"
+              }
+            }]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-1234-5678/foopackage",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "foodesc."
+          },
+          "locations": [{
+            "physicalLocation": {
+              "artifactLocation": {
+                "uri": "foo/target/alpine-310.tar.gz",
+                "uriBaseId": "ROOTPATH"
+              }
+            }
+          }]
+        }],
+      "columnKind": "utf16CodeUnits",
+      "originalUriBaseIds": {
+        "ROOTPATH": {
+          "uri": "/"
+        }
+      }
+    }
+  ]
+}`,
+		},
+		{
+			name:   "with primary url",
+			target: "rust-app\\Cargo.lock",
+			detectedVulns: []types.DetectedVulnerability{
+				{
+					VulnerabilityID:  "CVE-1234-5678",
+					PkgName:          "foopackage",
+					InstalledVersion: "1.2.3",
+					FixedVersion:     "4.5.6",
+					SeveritySource:   "NVD",
+					PrimaryURL:       "https://avd.aquasec.com/nvd/cve-1234-5678",
+					Vulnerability: dbTypes.Vulnerability{
+						Title:       "foovuln",
+						Description: "foodesc",
+						Severity:    "CRITICAL",
+					},
+				},
+			},
+			want: `{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "informationUri": "https://github.com/aquasecurity/trivy",
+          "fullName": "Trivy Vulnerability Scanner",
+          "version": "0.15.0",
+          "rules": [
+            {
+              "id": "CVE-1234-5678/foopackage",
+              "name": "Other Vulnerability (Footype)",
+              "shortDescription": {
+                "text": "CVE-1234-5678 Package: foopackage"
+              },
+              "fullDescription": {
+                "text": "foovuln."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-1234-5678",
+              "help": {
+                "text": "Vulnerability CVE-1234-5678\nSeverity: CRITICAL\nPackage: foopackage\nInstalled Version: 1.2.3\nFixed Version: 4.5.6\nLink: [CVE-1234-5678](https://avd.aquasec.com/nvd/cve-1234-5678)",
+                "markdown": "**Vulnerability CVE-1234-5678**\n| Severity | Package | Installed Version | Fixed Version | Link |\n| --- | --- | --- | --- | --- |\n|CRITICAL|foopackage|1.2.3|4.5.6|[CVE-1234-5678](https://avd.aquasec.com/nvd/cve-1234-5678)|\n"
+              },
+              "properties": {
+                "tags": [
+                  "vulnerability",
+                  "CRITICAL",
+                  "foopackage"
+                ],
+                "precision": "very-high"
+              }
+            }]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-1234-5678/foopackage",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "foodesc."
+          },
+          "locations": [{
+            "physicalLocation": {
+              "artifactLocation": {
+                "uri": "rust-app/Cargo.lock",
+                "uriBaseId": "ROOTPATH"
+              }
+            }
+          }]
+        }],
+      "columnKind": "utf16CodeUnits",
+      "originalUriBaseIds": {
+        "ROOTPATH": {
+          "uri": "/"
+        }
+      }
+    }
+  ]
+}`,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			templateFile := "../../contrib/sarif.tpl"
+			got := bytes.Buffer{}
+
+			template, err := ioutil.ReadFile(templateFile)
+			require.NoError(t, err, tc.name)
+
+			inputResults := report.Results{
+				report.Result{
+					Target:          tc.target,
+					Type:            "footype",
+					Vulnerabilities: tc.detectedVulns,
+				},
+			}
+			assert.NoError(t, report.WriteResults("template", &got, nil, inputResults, string(template), false), tc.name)
+			assert.JSONEq(t, tc.want, got.String(), tc.name)
 		})
 	}
 }

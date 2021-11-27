@@ -8,10 +8,11 @@
           "name": "Trivy",
           "informationUri": "https://github.com/aquasecurity/trivy",
           "fullName": "Trivy Vulnerability Scanner",
-          "version": "v0.15.0",
+          "version": "0.15.0",
           "rules": [
         {{- $t_first := true }}
         {{- range . }}
+            {{- $vulnerabilityType := .Type }}
             {{- range .Vulnerabilities -}}
               {{- if $t_first -}}
                 {{- $t_first = false -}}
@@ -19,15 +20,23 @@
                 ,
               {{- end }}
             {
-              "id": "[{{ .Vulnerability.Severity }}] {{ .VulnerabilityID }}",
-              "name": "dockerfile_scan",
+              "id": "{{ .VulnerabilityID }}/{{ .PkgName }}",
+              "name": "{{ toSarifRuleName $vulnerabilityType }}",
               "shortDescription": {
                 "text": {{ printf "%v Package: %v" .VulnerabilityID .PkgName | printf "%q" }}
               },
               "fullDescription": {
                 "text": {{ endWithPeriod (escapeString .Title) | printf "%q" }}
               },
-              "helpUri": "{{ .PrimaryURL }}",
+              "defaultConfiguration": {
+                "level": "{{ toSarifErrorLevel .Vulnerability.Severity }}"
+              }
+              {{- with $help_uri := .PrimaryURL -}}
+              ,
+              {{ $help_uri | printf "\"helpUri\": %q," -}}
+              {{- else -}}
+              ,
+              {{- end }}
               "help": {
                 "text": {{ printf "Vulnerability %v\nSeverity: %v\nPackage: %v\nInstalled Version: %v\nFixed Version: %v\nLink: [%v](%v)" .VulnerabilityID .Vulnerability.Severity .PkgName .InstalledVersion .FixedVersion .VulnerabilityID .PrimaryURL | printf "%q"}},
                 "markdown": {{ printf "**Vulnerability %v**\n| Severity | Package | Installed Version | Fixed Version | Link |\n| --- | --- | --- | --- | --- |\n|%v|%v|%v|%v|[%v](%v)|\n" .VulnerabilityID .Vulnerability.Severity .PkgName .InstalledVersion .FixedVersion .VulnerabilityID .PrimaryURL | printf "%q"}}
@@ -49,6 +58,7 @@
       "results": [
     {{- $t_first := true }}
     {{- range . }}
+        {{- $filePath := .Target }}
         {{- range $index, $vulnerability := .Vulnerabilities -}}
           {{- if $t_first -}}
             {{- $t_first = false -}}
@@ -56,21 +66,17 @@
             ,
           {{- end }}
         {
-          "ruleId": "[{{ $vulnerability.Vulnerability.Severity }}] {{ $vulnerability.VulnerabilityID }}",
+          "ruleId": "{{ $vulnerability.VulnerabilityID }}/{{ $vulnerability.PkgName }}",
           "ruleIndex": {{ $index }},
-          "level": "error",
+          "level": "{{ toSarifErrorLevel $vulnerability.Vulnerability.Severity }}",
           "message": {
             "text": {{ endWithPeriod (escapeString $vulnerability.Description) | printf "%q" }}
           },
           "locations": [{
             "physicalLocation": {
               "artifactLocation": {
-                "uri": "Dockerfile"
-              },
-              "region": {
-                "startLine": 1,
-                "startColumn": 1,
-                "endColumn": 1
+                "uri": "{{ toPathUri $filePath }}",
+                "uriBaseId": "ROOTPATH"
               }
             }
           }]
@@ -78,7 +84,12 @@
         {{- end -}}
       {{- end -}}
       ],
-      "columnKind": "utf16CodeUnits"
+      "columnKind": "utf16CodeUnits",
+      "originalUriBaseIds": {
+        "ROOTPATH": {
+          "uri": "/"
+        }
+      }
     }
   ]
 }

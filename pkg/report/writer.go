@@ -9,21 +9,28 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/Masterminds/sprig"
 	"github.com/olekukonko/tablewriter"
 	"golang.org/x/xerrors"
 
+	"github.com/aquasecurity/fanal/analyzer/library"
 	ftypes "github.com/aquasecurity/fanal/types"
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/utils"
 )
 
 // Now returns the current time
 var Now = time.Now
+
+// regex to extract file path in case string includes (distro:version)
+var re = regexp.MustCompile(`(?P<path>.+?)(?:\s*\((?:.*?)\).*?)?$`)
 
 // Results to hold list of Result
 type Results []Result
@@ -74,13 +81,15 @@ type TableWriter struct {
 // Write writes the result on standard output
 func (tw TableWriter) Write(results Results) error {
 	for _, result := range results {
+		// Skip zero vulnerabilities on Java archives (JAR/WAR/EAR)
+		if result.Type == library.Jar && len(result.Vulnerabilities) == 0 {
+			continue
+		}
 		tw.write(result)
 	}
 	return nil
 }
 
-// nolint: gocyclo
-// TODO: refactror and fix cyclometic complexity
 func (tw TableWriter) write(result Result) {
 	table := tablewriter.NewWriter(tw.Output)
 	header := []string{"Library", "Vulnerability ID", "Severity", "Installed Version", "Fixed Version"}
@@ -88,38 +97,7 @@ func (tw TableWriter) write(result Result) {
 		header = append(header, "Title")
 	}
 	table.SetHeader(header)
-
-	severityCount := map[string]int{}
-	for _, v := range result.Vulnerabilities {
-		severityCount[v.Severity]++
-
-		title := v.Title
-		if title == "" {
-			title = v.Description
-		}
-		splittedTitle := strings.Split(title, " ")
-		if len(splittedTitle) >= 12 {
-			title = strings.Join(splittedTitle[:12], " ") + "..."
-		}
-
-		if len(v.PrimaryURL) > 0 {
-			r := strings.NewReplacer("https://", "", "http://", "")
-			title = fmt.Sprintf("%s -->%s", title, r.Replace(v.PrimaryURL))
-		}
-
-		var row []string
-		if tw.Output == os.Stdout {
-			row = []string{v.PkgName, v.VulnerabilityID, dbTypes.ColorizeSeverity(v.Severity),
-				v.InstalledVersion, v.FixedVersion}
-		} else {
-			row = []string{v.PkgName, v.VulnerabilityID, v.Severity, v.InstalledVersion, v.FixedVersion}
-		}
-
-		if !tw.Light {
-			row = append(row, strings.TrimSpace(title))
-		}
-		table.Append(row)
-	}
+	severityCount := tw.setRows(table, result.Vulnerabilities)
 
 	var results []string
 
@@ -148,6 +126,41 @@ func (tw TableWriter) write(result Result) {
 	table.SetRowLine(true)
 	table.Render()
 	return
+}
+
+func (tw TableWriter) setRows(table *tablewriter.Table, vulns []types.DetectedVulnerability) map[string]int {
+	severityCount := map[string]int{}
+	for _, v := range vulns {
+		severityCount[v.Severity]++
+
+		title := v.Title
+		if title == "" {
+			title = v.Description
+		}
+		splitTitle := strings.Split(title, " ")
+		if len(splitTitle) >= 12 {
+			title = strings.Join(splitTitle[:12], " ") + "..."
+		}
+
+		if len(v.PrimaryURL) > 0 {
+			r := strings.NewReplacer("https://", "", "http://", "")
+			title = fmt.Sprintf("%s -->%s", title, r.Replace(v.PrimaryURL))
+		}
+
+		var row []string
+		if tw.Output == os.Stdout {
+			row = []string{v.PkgName, v.VulnerabilityID, dbTypes.ColorizeSeverity(v.Severity),
+				v.InstalledVersion, v.FixedVersion}
+		} else {
+			row = []string{v.PkgName, v.VulnerabilityID, v.Severity, v.InstalledVersion, v.FixedVersion}
+		}
+
+		if !tw.Light {
+			row = append(row, strings.TrimSpace(title))
+		}
+		table.Append(row)
+	}
+	return severityCount
 }
 
 // JSONWriter implements result Writer
@@ -183,34 +196,45 @@ func NewTemplateWriter(output io.Writer, outputTemplate string) (*TemplateWriter
 		}
 		outputTemplate = string(buf)
 	}
-	tmpl, err := template.New("output template").Funcs(template.FuncMap{
-		"escapeXML": func(input string) string {
-			escaped := &bytes.Buffer{}
-			if err := xml.EscapeText(escaped, []byte(input)); err != nil {
-				fmt.Printf("error while escapeString to XML: %v", err.Error())
-				return input
-			}
-			return escaped.String()
-		},
-		"endWithPeriod": func(input string) string {
-			if !strings.HasSuffix(input, ".") {
-				input += "."
-			}
+	var templateFuncMap template.FuncMap
+	templateFuncMap = sprig.GenericFuncMap()
+	templateFuncMap["escapeXML"] = func(input string) string {
+		escaped := &bytes.Buffer{}
+		if err := xml.EscapeText(escaped, []byte(input)); err != nil {
+			fmt.Printf("error while escapeString to XML: %v", err.Error())
 			return input
-		},
-		"toLower": func(input string) string {
-			return strings.ToLower(input)
-		},
-		"escapeString": func(input string) string {
-			return html.EscapeString(input)
-		},
-		"getEnv": func(key string) string {
-			return os.Getenv(key)
-		},
-		"getCurrentTime": func() string {
-			return Now().UTC().Format(time.RFC3339Nano)
-		},
-	}).Parse(outputTemplate)
+		}
+		return escaped.String()
+	}
+	templateFuncMap["toSarifErrorLevel"] = toSarifErrorLevel
+	templateFuncMap["toSarifRuleName"] = toSarifRuleName
+	templateFuncMap["endWithPeriod"] = func(input string) string {
+		if !strings.HasSuffix(input, ".") {
+			input += "."
+		}
+		return input
+	}
+	templateFuncMap["toLower"] = func(input string) string {
+		return strings.ToLower(input)
+	}
+	templateFuncMap["escapeString"] = func(input string) string {
+		return html.EscapeString(input)
+	}
+	templateFuncMap["toPathUri"] = func(input string) string {
+		var matches = re.FindStringSubmatch(input)
+		if matches != nil {
+			input = matches[re.SubexpIndex("path")]
+		}
+		input = strings.ReplaceAll(input, "\\", "/")
+		return input
+	}
+	templateFuncMap["getEnv"] = func(key string) string {
+		return os.Getenv(key)
+	}
+	templateFuncMap["getCurrentTime"] = func() string {
+		return Now().UTC().Format(time.RFC3339Nano)
+	}
+	tmpl, err := template.New("output template").Funcs(templateFuncMap).Parse(outputTemplate)
 	if err != nil {
 		return nil, xerrors.Errorf("error parsing template: %w", err)
 	}
@@ -224,4 +248,33 @@ func (tw TemplateWriter) Write(results Results) error {
 		return xerrors.Errorf("failed to write with template: %w", err)
 	}
 	return nil
+}
+
+func toSarifRuleName(vulnerabilityType string) string {
+	var ruleName string
+	switch vulnerabilityType {
+	case vulnerability.Ubuntu, vulnerability.Alpine, vulnerability.RedHat, vulnerability.RedHatOVAL,
+		vulnerability.Debian, vulnerability.DebianOVAL, vulnerability.Fedora, vulnerability.Amazon,
+		vulnerability.OracleOVAL, vulnerability.SuseCVRF, vulnerability.OpenSuseCVRF, vulnerability.Photon,
+		vulnerability.CentOS:
+		ruleName = "OS Package Vulnerability"
+	case "npm", "yarn", "nuget", "pipenv", "poetry", "bundler", "cargo", "composer":
+		ruleName = "Programming Language Vulnerability"
+	default:
+		ruleName = "Other Vulnerability"
+	}
+	return fmt.Sprintf("%s (%s)", ruleName, strings.Title(vulnerabilityType))
+}
+
+func toSarifErrorLevel(severity string) string {
+	switch severity {
+	case "CRITICAL", "HIGH":
+		return "error"
+	case "MEDIUM":
+		return "warning"
+	case "LOW", "UNKNOWN":
+		return "note"
+	default:
+		return "none"
+	}
 }
