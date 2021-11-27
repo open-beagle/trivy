@@ -5,5 +5,5 @@ git remote add upstream git@github.com:aquasecurity/trivy.git
 
 git fetch upstream
 
-git merge v0.15.0
+git merge v0.16.0
 ```
